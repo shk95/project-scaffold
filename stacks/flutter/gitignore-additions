@@ -1,0 +1,30 @@
+# Append to .gitignore, after the stack-agnostic entries from core/gitignore.
+
+# Flutter / Dart / pub
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+migrate_working_dir/
+
+# Symbolication and obfuscation
+app.*.symbols
+app.*.map.json
+
+# Android build output
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# CocoaPods — regenerated from the Podfile, and large
+**/macos/Pods/
+**/ios/Pods/
+
+# Android and iOS signing material, beyond the generic patterns in core
+**/android/key.properties
+**/android/app/google-services.json
+**/ios/Runner/GoogleService-Info.plist

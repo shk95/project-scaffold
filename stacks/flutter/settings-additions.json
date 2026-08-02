@@ -1,0 +1,27 @@
+{
+  "$comment": [
+    "Merge the entries below into the permissions.allow array of",
+    ".claude/settings.json, alongside the stack-agnostic ones from core.",
+    "",
+    "flutter run is included: it is how a change gets seen working, and it is",
+    "interruptible. flutter clean is harmless — it only deletes build output."
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze:*)",
+      "Bash(flutter test:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(flutter pub deps:*)",
+      "Bash(flutter pub outdated:*)",
+      "Bash(flutter build:*)",
+      "Bash(flutter run:*)",
+      "Bash(flutter devices:*)",
+      "Bash(flutter doctor:*)",
+      "Bash(flutter config:*)",
+      "Bash(flutter clean:*)",
+      "Bash(dart format:*)",
+      "Bash(dart analyze:*)",
+      "Bash(dart run build_runner:*)"
+    ]
+  }
+}

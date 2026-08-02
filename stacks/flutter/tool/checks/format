@@ -1,0 +1,16 @@
+#!/bin/sh
+# Formatting check. Called by the pre-commit hook and by CI.
+#
+# Generated files are excluded: their formatting is the generator's business,
+# not ours, and a generator that emits differently formatted output would
+# otherwise fail every commit.
+
+set -e
+files=$(git ls-files '*.dart' | grep -v '\.g\.dart$' || true)
+[ -n "$files" ] || exit 0
+
+# shellcheck disable=SC2086
+dart format --set-exit-if-changed --output=none $files || {
+  echo "Run: dart format ." >&2
+  exit 1
+}

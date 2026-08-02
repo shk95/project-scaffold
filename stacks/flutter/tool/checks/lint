@@ -1,0 +1,7 @@
+#!/bin/sh
+# Static analysis. Whole project rather than per-file: an edit routinely breaks
+# something that is not staged, and finding that out in CI is slower than
+# finding it now.
+
+set -e
+flutter analyze

@@ -1,0 +1,68 @@
+name: CI
+
+# The fast gate. Runs on everything headed for an integration branch so a
+# broken build is caught in the pull request rather than at release time.
+#
+# Includes the secret scan from core/workflows/secret-scan.yml as a job rather
+# than a separate workflow, so a branch protection rule needs fewer required
+# checks.
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master, dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Format, analyze, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # .flutter-version is the single source of truth, shared with
+      # tool/doctor.sh, so a contributor's machine and CI cannot drift apart
+      # without one of them saying so.
+      - id: flutter-version
+        run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter-version.outputs.version }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # Only if the project uses build_runner. Generated files are committed so
+      # a fresh clone analyses without running the generator; this keeps that
+      # promise honest.
+      - name: Generate code
+        run: dart run build_runner build
+
+      - name: Check generated code is committed and current
+        run: git diff --exit-code -- '*.g.dart'
+
+      - run: tool/checks/format
+      - run: tool/checks/lint
+      - run: tool/checks/test
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+      - name: Scan history
+        run: gitleaks git --redact --no-banner

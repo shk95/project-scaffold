@@ -1,0 +1,165 @@
+name: Release
+
+# Builds every target and publishes them as a GitHub Release, triggered by a
+# version tag so the release moment is deliberate and the version in the tag is
+# the version that ships.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# workflow_dispatch rehearses the builds without cutting a release; the publish
+# job is skipped in that case. Rehearse before the first real tag — it exercises
+# everything except the download-and-publish step.
+#
+# Delete the jobs for platforms this project does not target.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - id: flutter-version
+        run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter-version.outputs.version }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart run build_runner build
+
+      # With no signing config, Gradle falls back to the debug keystore. The
+      # APK installs, but its signature changes every build, so each install
+      # replaces rather than upgrades the last. Add a real keystore via secrets
+      # before distributing widely. F-Droid needs none — it builds from source
+      # and signs with its own key.
+      - run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: flutter-version
+        run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter-version.outputs.version }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart run build_runner build
+      - run: flutter build macos --release
+
+      - name: Ad-hoc sign
+        # Not optional. Apple Silicon refuses to execute an unsigned arm64
+        # binary at all. macOS ad-hoc signs on first launch, but only when the
+        # quarantine flag is absent — and a downloaded app always has it.
+        #
+        # This is not a Developer ID signature and is not notarised, so
+        # Gatekeeper still blocks the first launch; say so in the release notes.
+        # Proper signing needs a paid Apple Developer account.
+        run: |
+          APP=build/macos/Build/Products/Release/*.app
+          codesign --force --deep --sign - $APP
+          codesign --verify --verbose $APP
+
+      - name: Package
+        # ditto rather than zip: zip does not preserve the symlinks inside a
+        # .app bundle, and the unpacked app fails to launch.
+        run: ditto -c -k --keepParent build/macos/Build/Products/Release/*.app macos.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: macos.zip
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: flutter-version
+        shell: bash
+        run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter-version.outputs.version }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart run build_runner build
+      - run: flutter build windows --release
+
+      # Unsigned, so SmartScreen warns on first run. A code-signing certificate
+      # is a paid yearly subscription.
+      - name: Package
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath windows.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: windows.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [android, macos, windows]
+    runs-on: ubuntu-latest
+    # A manual run rehearses the builds without creating a release.
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      # Pairs with upload-artifact above on the v4+ artifact backend. This is
+      # the one step a workflow_dispatch rehearsal does not exercise.
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Write release notes
+        run: |
+          cat > notes.md <<'EOF'
+          ## Install
+
+          **Android** — allow installation from unknown sources. Signed with a
+          debug key, so uninstall the previous version before installing.
+
+          **macOS** — ad-hoc signed but not notarised, so Gatekeeper blocks the
+          first launch. Open it once via **System Settings → Privacy & Security
+          → Open Anyway**, or clear the quarantine flag:
+
+          ```
+          xattr -dr com.apple.quarantine /Applications/<app>.app
+          ```
+
+          **Windows** — unsigned, so SmartScreen warns: **More info → Run
+          anyway**.
+          EOF
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            artifacts/android/* artifacts/macos/* artifacts/windows/*
