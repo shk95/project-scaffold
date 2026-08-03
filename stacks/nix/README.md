@@ -136,6 +136,18 @@ minute and a half.
 one. The NixOS paths are written from how the module system is documented to
 work and should be read as a starting point to correct against real use.
 
+**One defect this overlay shipped with, for calibration.** `tool/doctor.sh`
+asks the flake for its own metadata to test whether `nix-command` and `flakes`
+are on. Good probe — `nix config show` needs nix-command in order to inspect
+nix-command, so it cannot answer. But the first version discarded the error and
+reported *every* failure as "flakes are not enabled", so a read-only
+`~/.cache/nix` sent you to export a variable that could not help. Found by
+control experiment, not by reading, and only because a sandbox happened to
+block the cache. The fix splits the verdict three ways, including
+could-not-tell. Assume the rest of this overlay contains its share of the same
+thing: a fallback branch that is one of the real answers rather than an
+admission.
+
 ## What is not here
 
 Secrets management (agenix, sops-nix) — add it when there is an actual secret
