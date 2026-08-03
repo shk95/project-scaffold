@@ -1,0 +1,62 @@
+name: CI
+
+# Runs on windows-latest rather than ubuntu-latest, even though PowerShell 7 is
+# cross-platform and the analyser would run happily on Linux. This stack is for
+# projects that install onto Windows: scheduled tasks, ACLs, the registry, the
+# event log. A Linux run would check the syntax of code whose every side effect
+# is unreachable there, and would report green on a script that cannot work.
+#
+# windows-latest ships pwsh 7, PSScriptAnalyzer and Pester 5, so nothing here
+# installs modules.
+#
+# Includes the secret scan from core/workflows/secret-scan.yml as a job rather
+# than a separate workflow, so a branch protection rule needs fewer required
+# checks.
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master, dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Format, lint and test
+    runs-on: windows-latest
+    defaults:
+      run:
+        # The checks are POSIX sh. windows-latest has Git Bash, so this needs no
+        # extra install — but it does need saying, or the runner uses pwsh and
+        # the shebang is ignored.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Versions
+        run: |
+          pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+          pwsh -NoProfile -Command '(Get-Module -ListAvailable PSScriptAnalyzer,Pester | Select-Object Name,Version | Out-String).Trim()'
+
+      - run: tool/checks/format
+      - run: tool/checks/lint
+      - run: tool/checks/test
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+      - name: Scan history
+        run: gitleaks git --redact --no-banner

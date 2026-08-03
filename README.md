@@ -36,11 +36,12 @@ stack from [`stacks/`](stacks/), and run `core/setup-repo.sh`.
 ## What is here
 
 ```
-decisions/       Why each convention exists, and what went wrong without it
-core/            Stack-agnostic: hooks, gitignore, doc templates, agent commands
-stacks/flutter/  The Flutter overlay
-stacks/nix/      The Nix overlay — home-manager and NixOS flakes
-SCAFFOLD.md      The playbook an agent follows
+decisions/          Why each convention exists, and what went wrong without it
+core/               Stack-agnostic: hooks, gitignore, doc templates, agent commands
+stacks/flutter/     The Flutter overlay
+stacks/nix/         The Nix overlay — home-manager and NixOS flakes
+stacks/powershell/  The PowerShell 7 overlay — tools that install onto Windows
+SCAFFOLD.md         The playbook an agent follows
 ```
 
 The core hooks delegate their checks to `tool/checks/format`, `tool/checks/lint`
@@ -62,10 +63,20 @@ invisible from inside that stack.
 
 The Flutter overlay is verified: built in anger, on the project these
 conventions came from. The Nix overlay is only partly verified — see
-[`stacks/nix/README.md`](stacks/nix/README.md) for exactly which part.
-Overlays, and parts of overlays, belong here when someone has actually run
-them, not before; where that line falls for Nix is written down rather than
-implied.
+[`stacks/nix/README.md`](stacks/nix/README.md) for exactly which part. The
+PowerShell overlay is verified where it needs no extra module and unverified
+where it does; [`stacks/powershell/README.md`](stacks/powershell/README.md)
+draws that line as a table. Overlays, and parts of overlays, belong here when
+someone has actually run them, not before; where that line falls is written
+down rather than implied.
+
+The PowerShell overlay is the first one that came from a failure rather than
+from a green field. Two tools on the same machine each hooked a banner into the
+PowerShell profile, and `git fetch` over SSH started dying with
+`bad line length character` — a message that names neither PowerShell nor a
+profile. Both projects had the reason for the guard nowhere but in the code, so
+the guard was one hand-written line away from being bypassed, and it was. That
+is the shape of thing this repository exists to stop losing.
 
 ## Licence
 

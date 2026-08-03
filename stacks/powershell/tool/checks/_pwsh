@@ -1,0 +1,24 @@
+# Sourced by the checks in this directory. Not a check itself: the core
+# pre-commit hook runs tool/checks/format, lint and test by name, so a helper
+# sitting beside them is never mistaken for one.
+#
+# Windows first. On WSL both may exist — `pwsh` is the Linux build, `pwsh.exe`
+# the Windows one — and the Windows one is the interpreter the installed copy
+# will actually run under, so it is the one whose parser verdict matters. On a
+# Linux CI runner only `pwsh` exists and the loop falls through to it.
+
+PWSH=""
+for candidate in pwsh.exe pwsh; do
+  if command -v "$candidate" >/dev/null 2>&1; then PWSH=$candidate; break; fi
+done
+
+if [ -z "$PWSH" ]; then
+  printf '\033[31m✗ PowerShell 7 is not on PATH.\033[0m\n' >&2
+  printf '  Install it: https://aka.ms/powershell\n' >&2
+  exit 1
+fi
+
+# Every invocation is -NoProfile. Without it each call loads the user's profile,
+# which is slower and, if that profile prints, mixes its output into whatever
+# this check is trying to read. See the overlay README.
+run_pwsh() { "$PWSH" -NoProfile -NonInteractive -Command - ; }
