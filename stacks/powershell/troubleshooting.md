@@ -82,6 +82,28 @@ fine because it takes the `Add-Content` path.
 Edit marker blocks line by line instead of with a regex. Then there is no
 replacement string to interpret.
 
+### `The property 'Count' cannot be found on this object.` on a variable you just assigned from a function
+
+`return @()` does not return an empty array. The pipeline unrolls it to
+*nothing*, so the caller receives `$null` — and under
+`Set-StrictMode -Version Latest` the next `.Count` is a terminating error rather
+than a quiet zero. The function looks obviously correct at the call site, which
+is why this survives review.
+
+Wrap the array so unrolling yields the array itself:
+
+```powershell
+return ,@()          # not: return @()
+return ,$list.ToArray()
+```
+
+Guard the receiving end as well — `if ($null -eq $Lines) { $Lines = @() }` —
+because the next person to add a function here will forget the comma.
+
+Worth knowing which way StrictMode cuts: it is right for a script a human runs,
+and wrong for a daemon that must not die, where one unexpected null becomes a
+crash instead of a blank field. Decide per entry point rather than per project.
+
 ### A helper function is never called, and the previous command runs instead
 
 PowerShell resolves **alias → function → cmdlet → executable**. Single and

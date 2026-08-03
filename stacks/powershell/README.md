@@ -164,6 +164,18 @@ errors on every start. Delimit with markers, strip between them on removal, and
 preserve whatever else the file holds. The same marker contract makes install
 idempotent.
 
+**A contract verified in another language is not verified until it is re-run
+here.** One source project had an idempotence contract for editing a shell rc
+file — marker blocks, duplicate collapse, backup only on change — proven by
+repeated runs in bash. Porting it to PowerShell for the profile hook looked like
+transcription. It was not: `return @()` unrolls to `$null`, StrictMode turned
+the next `.Count` into a terminating error, and the port failed on its first
+test. Nothing about that is visible from the bash original, and static review
+did not find it either. Port the *contract*, then re-derive the evidence — a
+test that pulls the functions out of the installer via its AST costs an hour and
+needs neither admin rights nor the scheduled task the installer would otherwise
+demand.
+
 **`Install-Module` is not on the allow-list.** It writes to the machine outside
 the repository, and `-Scope CurrentUser` still installs into the user's module
 path. `tool/doctor.sh` names the command to run; a human decides to run it.
