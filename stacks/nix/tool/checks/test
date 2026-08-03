@@ -1,0 +1,108 @@
+#!/bin/sh
+# Two tiers of verification, because they catch different things.
+#
+#   Tier 1 — eval.  Forces each configuration's toplevel derivation. Catches
+#                   option typos, type errors, module assertions and bad
+#                   imports — most of what actually breaks a config repo.
+#   Tier 2 — build. Realises it, proving the packages exist and the closure
+#                   builds.
+#
+# `nix flake check` is neither, and this is the reason the script exists: it
+# validates the flake's shape and its standard outputs, and does not descend
+# into homeConfigurations / nixosConfigurations / darwinConfigurations at all.
+# A green `nix flake check` says nothing about whether your configurations
+# work. Forcing `.drvPath` is what actually evaluates them.
+#
+# Every configuration is assumed to target the machine you run this on — true
+# of a single-host repo, and of WSL work where everything is x86_64-linux. One
+# targeting another system is refused by name rather than half-handled; see
+# the overlay README for what a genuinely multi-host repo needs instead.
+
+set -e
+
+here=$(nix eval --raw --impure --expr 'builtins.currentSystem')
+
+report=$(mktemp)
+trap 'rm -f "$report"' EXIT
+
+nix flake check
+
+# The attribute that forces a real derivation, per flavour.
+# `pkgs.stdenv.hostPlatform.system` resolves the target system for all three,
+# so the probe below needs no special-casing.
+toplevel_attr() {
+  case $1 in
+    homeConfigurations) echo "activationPackage" ;;
+    *)                  echo "config.system.build.toplevel" ;;
+  esac
+}
+
+check_flavour() {
+  output=$1
+  attr=$(toplevel_attr "$output")
+
+  names=$(nix eval --raw ".#$output" \
+    --apply 'x: builtins.concatStringsSep "\n" (builtins.attrNames x)' 2>/dev/null) || return 0
+  [ -n "$names" ] || return 0
+
+  echo "$names" | while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    ref=".#$output.\"$name\""
+    system=$(nix eval --raw "$ref.pkgs.stdenv.hostPlatform.system" 2>/dev/null || echo "unknown")
+
+    if [ "$system" != "$here" ]; then
+      printf '%s.%s|%s|FOREIGN\n' "$output" "$name" "$system" >> "$report"
+      continue
+    fi
+
+    printf '→ eval  %s.%s\n' "$output" "$name"
+    if ! nix eval --raw "$ref.$attr.drvPath" >/dev/null; then
+      printf '%s.%s|%s|EVAL_FAIL\n' "$output" "$name" "$system" >> "$report"
+      continue
+    fi
+
+    printf '→ build %s.%s\n' "$output" "$name"
+    if nix build --no-link "$ref.$attr"; then
+      printf '%s.%s|%s|ok\n' "$output" "$name" "$system" >> "$report"
+    else
+      printf '%s.%s|%s|BUILD_FAIL\n' "$output" "$name" "$system" >> "$report"
+    fi
+  done
+}
+
+check_flavour homeConfigurations
+check_flavour nixosConfigurations
+check_flavour darwinConfigurations
+
+echo
+echo "── Verification coverage ─────────────────────────────────"
+printf '   host: %s\n\n' "$here"
+
+while IFS='|' read -r target system status; do
+  case "$status" in
+    ok)         line="eval ✓ build ✓" ;;
+    EVAL_FAIL)  line="eval ✗" ;;
+    BUILD_FAIL) line="eval ✓ build ✗" ;;
+    FOREIGN)    line="not attempted — targets $system" ;;
+    *)          line="unknown" ;;
+  esac
+  printf '   %-38s %s\n' "$target" "$line"
+done < "$report"
+echo
+
+if grep -q 'FOREIGN' "$report"; then
+  cat >&2 <<EOF
+✗ A configuration targets a system other than $here.
+
+  This overlay verifies configurations for the host it runs on. Building for
+  another system needs a builder for it, and deciding which changes still
+  need checking there is a real design question, not a flag — see the
+  overlay README before adding one.
+EOF
+  exit 1
+fi
+
+if grep -q 'FAIL' "$report"; then
+  printf '\033[31m✗ A configuration failed to evaluate or build.\033[0m\n' >&2
+  exit 1
+fi

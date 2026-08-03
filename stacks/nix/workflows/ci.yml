@@ -1,0 +1,60 @@
+name: CI
+
+# The Linux build here is *not* redundant with the identical command on the
+# contributor's machine. A local build can succeed because of that machine's
+# store, its NIX_CONFIG or its flake registry; this one proves the flake
+# builds from nothing but the repository and flake.lock. That is
+# decisions/006-verify-the-clone.md in build form, and no local run can
+# substitute for it.
+#
+# Includes the secret scan from core/workflows/secret-scan.yml as a job rather
+# than a separate workflow, so a branch protection rule needs fewer required
+# checks.
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master, dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Format, lint, eval and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # No binary cache action here on purpose.
+      # DeterminateSystems/magic-nix-cache-action now requires a FlakeHub
+      # account: without one it caches nothing and still writes an
+      # error-level annotation onto every run, so a green build carries a
+      # permanent red mark. An error that is always present is one nobody
+      # reads, and it costs the next person the time it takes to prove it is
+      # benign. If builds here get slow enough to matter, register with
+      # FlakeHub and add it back, or use cachix/cachix-action — but add a
+      # cache deliberately rather than carrying a broken one.
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - run: tool/checks/format
+      - run: tool/checks/lint
+      - run: tool/checks/test
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+      - name: Scan history
+        run: gitleaks git --redact --no-banner

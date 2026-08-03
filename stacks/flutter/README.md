@@ -26,6 +26,15 @@ flutter --version | head -1 | awk '{print $2}' > .flutter-version
 `.flutter-version` is read by both `tool/doctor.sh` and CI, so a contributor's
 machine and CI cannot drift apart without one of them saying so.
 
+Name this stack's blocked reasons when running `core/setup-repo.sh` — they
+live here rather than in the core, which only creates the universal
+`needs-manual-check`:
+
+```sh
+BLOCKED_LABELS="needs-android-device needs-windows" \
+  core/setup-repo.sh <owner>/<repo>
+```
+
 ## Decisions specific to this stack
 
 **Commit the generated `*.g.dart` files.** A fresh clone then analyses and tests

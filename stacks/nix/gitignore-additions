@@ -1,0 +1,11 @@
+# Append to .gitignore, after the stack-agnostic entries from core/gitignore.
+
+# Nix build results
+result
+result-*
+
+# direnv's cache
+.direnv/
+
+# flake.lock is NOT ignored. It is the actual pin — reproducibility is the
+# point of this stack, and a repo that ignores its lock file has none.
