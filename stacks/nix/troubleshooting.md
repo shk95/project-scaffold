@@ -22,9 +22,16 @@ git add -N <the new files>
 
 `-N` (intent-to-add) is enough; a full `git add` is not required yet. Name the
 paths rather than running `git add -N .` — it fails outright the moment the
-tree contains anything that is not a regular file or symlink (a stray
-character device masking a dotfile, for instance), and the whole command
-aborts instead of adding the files you actually meant.
+tree contains anything that is not a regular file or symlink, and the whole
+command aborts instead of adding the files you actually meant.
+
+An earlier version of this entry blamed "a stray character device masking a
+dotfile", which is what the failure looks like from inside an agent sandbox.
+Nothing is on disk: the devices are bind mounts in the agent's own mount
+namespace, and `find . -type c` outside the sandbox returns nothing. The advice
+above still holds — an agent runs inside that namespace, so `git add -N .`
+really does abort there — but do not go hunting the repository for a device
+node to delete. See the sandbox note in `core/templates/CLAUDE.md`.
 
 ### `nix flake check` passes but the configuration is broken
 

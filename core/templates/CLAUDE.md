@@ -25,6 +25,17 @@ Then pick work from the milestone table in `README.md`.
 are the literal messages. Do not read it end to end; it is a lookup table. Add
 to it only when something cost you real time *and* will recur.
 
+**If you are an agent, suspect your own sandbox first.** A shell tool that
+sandboxes filesystem access typically does it with a mount namespace, bind-
+mounting over the paths it denies. Inside that namespace `git status` can list
+files nobody created — often `/dev/null` character devices wearing the names of
+home-directory dotfiles — `git add -N .` can refuse the tree with *can only add
+regular files, symbolic links or git-directories*, and git can warn *unable to
+access '.gitmodules': Permission denied* while otherwise working. None of it is
+true of the disk and none of it is reproducible by a person in a terminal. The
+check is always the same: **run the command again outside the sandbox and
+compare.** If the two disagree, the sandbox is the subject, not the repository.
+
 ## The rules that are expensive to break
 
 <!-- The invariants a session could violate without noticing. Each should say
