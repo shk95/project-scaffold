@@ -39,7 +39,7 @@ stack from [`stacks/`](stacks/), and run `core/setup-repo.sh`.
 decisions/       Why each convention exists, and what went wrong without it
 core/            Stack-agnostic: hooks, gitignore, doc templates, agent commands
 stacks/flutter/  The Flutter overlay
-stacks/nix/      The Nix overlay — home-manager, nix-darwin and NixOS configs
+stacks/nix/      The Nix overlay — home-manager and NixOS flakes
 SCAFFOLD.md      The playbook an agent follows
 ```
 

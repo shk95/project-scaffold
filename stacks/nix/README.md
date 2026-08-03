@@ -1,12 +1,14 @@
 # Nix overlay
 
-Standalone home-manager, nix-darwin and NixOS configurations all live under
-this one overlay rather than three separate ones: they share a flake, a
-formatter, a linter and a verification model, and differ only in which
-deployment target the flake declares. A single `flake.nix` can define any
-combination of `homeConfigurations`, `darwinConfigurations` and
-`nixosConfigurations` at once — the normal shape for a personal config
-spanning several machines.
+For a Nix flake that configures the machine it is worked on: standalone
+home-manager, NixOS, or both in one flake. Verified on standalone
+home-manager under WSL.
+
+**Scope: every configuration targets the host you run the checks on.** That is
+true of a single-host repo and of WSL work, where everything is
+`x86_64-linux` whether or not NixOS is involved. A configuration for another
+system is refused by name rather than half-handled — see *Growing past one
+host* below, which is a design note, not a feature.
 
 ## Copy
 
@@ -24,163 +26,119 @@ No SDK version to pin the way the Flutter overlay pins `.flutter-version`:
 `flake.lock` already is that pin, for every input, and `tool/doctor.sh` checks
 that flakes are enabled rather than checking a version number.
 
-Name the blocked reasons this stack actually has when running
-`core/setup-repo.sh`, one per system you cannot build locally:
+If the flake declares a `nixosConfigurations` for a host you do not activate
+from, name that when running `core/setup-repo.sh`:
 
 ```sh
-BLOCKED_LABELS="needs-aarch64-darwin needs-nixos-host" \
-  core/setup-repo.sh <owner>/<repo>
+BLOCKED_LABELS="needs-nixos-host" core/setup-repo.sh <owner>/<repo>
 ```
 
-Prefer the full system string (`needs-aarch64-darwin`) over the kernel
-(`needs-darwin`): on `x86_64-linux` an `aarch64-linux` configuration is
-equally unbuildable, and a label saying `needs-linux` reads as satisfied by
-the host that just skipped it.
+## `nix flake check` does not check your configurations
 
-## Verification is two tiers, and the tiers have different reach
+This is the decision the overlay is built around, and it is not obvious.
 
-This is the decision the rest of the overlay is built around.
+`nix flake check` validates the flake's shape and its standard outputs. It does
+**not** descend into `homeConfigurations`, `nixosConfigurations` or
+`darwinConfigurations` — those are arbitrary attributes as far as it is
+concerned. A repository whose CI runs only `nix flake check` is not checking
+the thing it exists to produce.
 
-| | Runs where | Catches |
-| --- | --- | --- |
-| **Tier 1 — eval** | every configuration, from any host | option typos, type errors, module assertions, bad imports |
-| **Tier 2 — build** | only where the target system is this machine | packages that do not exist for that platform, derivations that fail |
+`tool/checks/test` therefore forces each configuration's toplevel derivation
+itself, in two tiers:
 
-Nix evaluates a configuration for a foreign system perfectly well; it just
-cannot *realise* one. On an `x86_64-linux` box, a `darwinConfigurations` entry
-evaluates all the way to a `.drv` path, and a bad option name in it fails
-loudly — with suggestions. So **"I am on Linux, therefore the darwin config is
-unverified" is only half true**, and treating it as fully true throws away the
-cheap half of the verification.
+| | Catches |
+| --- | --- |
+| **eval** — force `.drvPath` | option typos, type errors, module assertions, bad imports |
+| **build** — realise it | packages that do not exist, derivations that fail |
 
-`nix flake check` is neither tier. It validates the flake's shape and its
-standard outputs, and does not look inside `homeConfigurations`,
-`darwinConfigurations` or `nixosConfigurations` at all. A config repo running
-only `nix flake check` is not checking its configurations — the bug that
-produced this overlay's `nix.package` entry in `troubleshooting.md` sailed
-through a green `nix flake check` and was caught by a plain `nix eval` of the
-toplevel `drvPath`.
+The split earned itself immediately: a missing `nix.package` in a standalone
+home-manager config sailed through a green `nix flake check` and failed the
+moment `.drvPath` was forced. That bug is in `troubleshooting.md`.
 
-## The dangerous change is the shared one, not the platform-specific one
+## Growing past one host
 
-Editing a darwin-only module from Linux is an obvious gap; nobody is fooled by
-it. Editing a module that *every* host imports is the one that hurts: the
-Linux build goes green, the green covers half the surface, and green is what
-gets believed. That is `decisions/003-done-must-be-mechanically-checkable.md`'s
-"plausible code" in config form.
+Not implemented, deliberately. Written down because the problem is real and
+the shape of it is worth knowing before you hit it.
 
-So `tool/checks/test` diffs the branch against `origin/dev` and names any
-change whose blast radius reaches a configuration it could not build:
+Once a flake declares configurations for more than one system, the checks stop
+being able to build them all — Nix does not cross-compile to Darwin, and an
+`aarch64-linux` closure needs an `aarch64-linux` builder. Evaluation still
+works from anywhere, which is more useful than it sounds: a `darwinConfigurations`
+entry evaluates to a `.drv` from Linux, and a bad option name in it fails
+loudly, with suggestions. So the honest position is not "unverified" but
+"evaluated, not built".
 
-```
-   homeConfigurations.user1               eval ✓ build ✓
-   darwinConfigurations.mba               eval ✓ build —  (needs aarch64-darwin)
+The trap that follows is specific. Editing a platform-specific module from the
+wrong host is an obvious gap and fools nobody. Editing a module that *every*
+host imports is the dangerous one: the build that can run goes green, the green
+covers half the surface, and green is what gets believed. Whatever detects that
+has to answer "does this change reach a configuration I could not build?",
+which needs the repository's layout to distinguish shared modules from
+platform-specific ones — and that layout is a decision the repository has not
+made yet at the point this overlay is copied in.
 
-   ! darwinConfigurations.mba was not built here, and this branch changes:
-     modules/common/packages.nix (shared)
-```
-
-Paste that block into the pull request. `decisions/003` already requires the
-body to carry what was *not* verified; this makes the answer something the
-tool produced rather than something the session claimed.
-
-The blast-radius rule is a directory-name heuristic, not a dependency graph:
-`darwin/` and `nixos/` path segments are platform-specific, and **everything
-else counts as shared**. Wrong in the safe direction — a layout the rule has
-never been taught over-warns instead of granting false confidence. Note that
-`home/` is deliberately *not* treated as home-manager-only, because a
-home-manager module is routinely imported by nix-darwin and NixOS as well.
-
-For the heuristic to say anything useful, the layout has to carry the
-distinction — `modules/common/`, `modules/darwin/`, `modules/nixos/`,
-`hosts/<name>/` or similar. A single-flavour repo satisfies this trivially,
-since everything in it is shared and buildable.
-
-Warnings do not fail the check. A shared module reaching an unbuildable host
-is the *normal* case in a multi-host config, and a gate that blocks every such
-push only teaches people `--no-verify`. Eval and build failures do fail it.
-
-## CI runs Linux only, and that is not the same as trusting the local run
-
-No macOS runner. `tool/checks/test` already evaluates darwin configurations on
-the Linux runner, and a macOS runner is billed at several times the Linux rate
-to close a gap the person who owns the Mac closes for free the next time they
-run `darwin-rebuild switch`. Record the gap; do not rent hardware to stare at
-it.
-
-But the Linux *build* stays in CI, and it is not redundant with the identical
-command on the contributor's machine. A local build can pass because of that
-machine's store, its `NIX_CONFIG` or its flake registry. CI's proves the flake
-builds from nothing but the repository and `flake.lock` — which is
-`decisions/006-verify-the-clone.md` in build form, and is the one thing no
-local run can substitute for. This is also why
-`decisions/002-hooks-are-opt-in-so-ci-must-backstop.md` still applies here in
-full: the hook is for speed, CI is the thing that cannot be skipped.
+An earlier version of this overlay shipped a directory-name heuristic for it.
+It was removed: it could not fire in any repository this overlay had been used
+on, and it guessed at a layout convention rather than following one that
+existed. Build it when there is a real multi-host repository to build it
+against, and it will fit that repository instead of an imagined one.
 
 ## Other decisions specific to this stack
 
 **The unix account and the git identity are separate variables, even when one
 person owns both.** `user` (what `home.username` is set to) and
 `gitname`/`gitmail` (what `programs.git` signs commits as) do not have to
-match, and a flake that fuses them is why a WSL account named after a role
-ends up signing commits as that role. Pass them separately through
-`specialArgs`.
+match, and a flake that fuses them is why an account named after a role or a
+machine ends up authoring commits. Pass them separately through `specialArgs`.
 
 **`nix.package` must be set explicitly for standalone home-manager.** Only
-`homeConfigurations` needs it — nix-darwin and NixOS already know which Nix
+`homeConfigurations` needs it — NixOS and nix-darwin already know which Nix
 manages them. See `troubleshooting.md`.
 
 **`flake.lock` is committed, never ignored.** It is the actual pin;
 reproducibility is the entire point of this stack, and a repo that ignores its
 lock file has none.
 
-**`nix flake update` is not in `settings-additions.json`.** It rewrites
-`flake.lock` to newer input revisions — a dependency-version decision, the
-same category as `flutter pub upgrade`, which the Flutter overlay likewise
-leaves off its allow-list.
+**CI's build is not redundant with the local one.** A local build can pass
+because of that machine's store, its `NIX_CONFIG` or its flake registry. CI's
+proves the flake builds from nothing but the repository and `flake.lock` —
+`decisions/006-verify-the-clone.md` in build form, and the one thing no local
+run substitutes for. This is also why
+`decisions/002-hooks-are-opt-in-so-ci-must-backstop.md` applies here in full:
+the hook is for speed, CI is what cannot be skipped.
 
-**`home-manager switch`, `darwin-rebuild switch`, `nixos-rebuild switch` and
-`nix-collect-garbage` are not on the allow-list either.** Everything listed
-there inspects, builds or formats; these four mutate the running machine or
-delete store paths, the same reasoning as core leaving out `git push`. Note
-that a successful tier-2 build has already exercised option evaluation,
-package resolution and the activation script's construction — activation adds
-almost no verification value for the risk it carries.
+**No binary cache action.** `magic-nix-cache-action` now needs a FlakeHub
+account; without one it caches nothing, writes an error-level annotation onto
+every green run, and costs time — 6m39s with it, 1m23s and 1m28s without, same
+repository and same checks. Add a cache deliberately if builds get slow, rather
+than carrying a broken one.
+
+**`nix flake update` is not in `settings-additions.json`.** It rewrites
+`flake.lock` to newer input revisions — a dependency-version decision, the same
+category as `flutter pub upgrade`, which the Flutter overlay likewise leaves
+off its allow-list.
+
+**Neither are the commands that mutate the machine** — `home-manager switch`,
+`nixos-rebuild switch`, `nix-collect-garbage`. Everything on the allow-list
+inspects, builds or formats, the same reasoning as core leaving out
+`git push`. A successful build has already exercised option evaluation,
+package resolution and the activation script's construction, so activation
+adds little verification for the risk it carries.
 
 ## Honest limits
 
-**Verified:** the two-tier model, end to end. `homeConfigurations` built on
-WSL; a real `nix-darwin` configuration evaluated from Linux, including a
-deliberately planted bad option caught with suggestions and an eval failure
-correctly exiting non-zero; the skip-and-warn path exercised on a synthetic
-two-flavour repo with a shared-module change; the missing-`origin` path
-degrading to a printed note rather than silence.
+**Verified:** the two-tier model end to end on standalone home-manager under
+WSL, including an eval failure correctly exiting non-zero; the CI workflow
+watched passing on real pull requests, with the build job taking about a
+minute and a half.
 
-The CI workflow has been watched passing on real pull requests: both jobs
-green, with the build job taking about a minute and a half on a single-flavour
-repository.
-
-That number is also why `magic-nix-cache-action` is gone rather than merely
-tolerated. The run carrying it took 6m39s; the next two, identical but without
-it, took 1m23s and 1m28s. Same repository, same checks — so the action was
-charging five minutes for a cache it could not authenticate to.
-
-**Not verified:** actually *building* a darwin or NixOS configuration, which
-by definition needs those hosts. `nixos-rebuild`/`darwin-rebuild switch` have
-never been run through these conventions, and no CI run has yet exercised the
-skip-and-warn path against a real foreign-system configuration.
-
-**Import-from-derivation defeats tier 1.** If a configuration uses IFD, then
-evaluating it for a foreign system has to *build* something for that system
-part-way through, and stops with `a 'aarch64-darwin' ... is required to build
-..., but I am a 'x86_64-linux'`. Uncommon, but when it happens that
-configuration drops to build-only verification on its native host. The entry
-in `troubleshooting.md` names the message.
+**Not verified:** `nixosConfigurations` — nothing here has built or activated
+one. The NixOS paths are written from how the module system is documented to
+work and should be read as a starting point to correct against real use.
 
 ## What is not here
 
 Secrets management (agenix, sops-nix) — add it when there is an actual secret
-to manage. A NixOS-on-WSL path, deliberately out of scope until plain WSL plus
-home-manager stops being enough. Darwin/homebrew interop and NixOS
-`hardware-configuration.nix` generation, both real per-machine concerns this
-overlay does not attempt to templatise.
+to manage. Multi-host and cross-system verification, per *Growing past one
+host*. NixOS `hardware-configuration.nix` generation, a per-machine concern
+this overlay does not attempt to templatise.
