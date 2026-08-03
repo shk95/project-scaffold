@@ -1,0 +1,21 @@
+# Append to .gitignore, after the stack-agnostic entries from core/gitignore.
+
+# Pester output
+testResults*.xml
+coverage.xml
+
+# PowerShell module staging, if the project ever builds one
+output/
+BuildOutput/
+
+# Local scratch data directories. A project that installs into
+# %ProgramData% usually grows a -DataDir switch pointing somewhere local
+# during testing; name yours here.
+_test/
+_scratch/
+
+# Nothing about line endings belongs in .gitignore, but it is the thing most
+# often missed alongside it: .gitattributes needs
+#     *.sh text eol=lf
+# or a shell script that round-trips through Windows arrives in WSL with CRLF
+# and fails with `$'\r': command not found`.

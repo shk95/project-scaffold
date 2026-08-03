@@ -1,0 +1,30 @@
+{
+  "$comment": [
+    "Merge into permissions.allow, alongside the stack-agnostic entries from",
+    "core. Everything below parses, analyses or renders — nothing installs a",
+    "module, edits a profile, or touches the running machine.",
+    "",
+    "`pwsh -NoProfile` is the entry that matters. Without -NoProfile every",
+    "invocation loads the user's profile, which is both slower and the exact",
+    "hazard this overlay exists to document: a profile that prints turns any",
+    "captured invocation into mixed output. Allow the -NoProfile form and let",
+    "the bare form prompt.",
+    "",
+    "Deliberately absent: `Install-Module` (writes outside the repository even",
+    "with -Scope CurrentUser; tool/doctor.sh names the command and a human",
+    "decides), `Set-ExecutionPolicy` and `auditpol` (machine-wide policy),",
+    "`Register-ScheduledTask` / `Set-Acl` / `Set-Service` (install-time",
+    "mutations that need admin and cannot be undone by re-running anything),",
+    "and any write to $PROFILE. Same reasoning as core leaving out `git push`."
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(pwsh -NoProfile:*)",
+      "Bash(pwsh.exe -NoProfile:*)",
+      "Bash(tool/checks/format:*)",
+      "Bash(tool/checks/lint:*)",
+      "Bash(tool/checks/test:*)",
+      "Bash(tool/doctor.sh:*)"
+    ]
+  }
+}

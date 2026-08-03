@@ -1,0 +1,58 @@
+#!/bin/sh
+# Formatting check. Called by the pre-commit hook and by CI.
+#
+# PSScriptAnalyzer's Invoke-Formatter is the only formatter this ecosystem
+# agrees on, and it has no --check mode: it returns the formatted text and
+# leaves the comparison to the caller. So this reformats in memory and compares,
+# writing nothing.
+#
+# Settings live in PSScriptAnalyzerSettings.psd1 at the repository root if one
+# exists — put the house style there rather than passing flags from here, so the
+# editor extension and this check agree.
+
+set -e
+. "$(dirname "$0")/_pwsh"
+
+run_pwsh <<'PS'
+$ErrorActionPreference = 'Stop'
+
+if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+    Write-Host '✗ PSScriptAnalyzer is not installed.'
+    Write-Host '  Install-Module PSScriptAnalyzer -Scope CurrentUser'
+    exit 1
+}
+Import-Module PSScriptAnalyzer
+
+$settings = if (Test-Path ./PSScriptAnalyzerSettings.psd1) { './PSScriptAnalyzerSettings.psd1' } else { $null }
+
+$files = Get-ChildItem -Recurse -File |
+    Where-Object { $_.Extension -in '.ps1', '.psm1' } |
+    Where-Object { $_.FullName -notmatch '[\\/](\.git|output|BuildOutput)[\\/]' }
+
+$offenders = @()
+foreach ($f in $files) {
+    # Read and write UTF-8 without a BOM throughout. In pwsh 7 -Encoding utf8
+    # already means utf8NoBOM; being explicit here documents that a BOM would
+    # make Windows PowerShell 5.1 and pwsh disagree about the same file.
+    $original = Get-Content -LiteralPath $f.FullName -Raw -Encoding utf8
+    $formatted = if ($settings) {
+        Invoke-Formatter -ScriptDefinition $original -Settings $settings
+    } else {
+        Invoke-Formatter -ScriptDefinition $original
+    }
+    if ($formatted -ne $original) { $offenders += $f.FullName }
+}
+
+if ($offenders) {
+    Write-Host '✗ These files are not formatted:'
+    $offenders | ForEach-Object { Write-Host "    $_" }
+    Write-Host ''
+    Write-Host '  Fix in place:'
+    Write-Host '    Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {'
+    Write-Host '      $t = Invoke-Formatter -ScriptDefinition (Get-Content $_ -Raw -Encoding utf8)'
+    Write-Host '      Set-Content $_ -Value $t -Encoding utf8 -NoNewline'
+    Write-Host '    }'
+    exit 1
+}
+Write-Host ("✓ {0} file(s) formatted" -f $files.Count)
+PS

@@ -1,0 +1,68 @@
+#!/bin/sh
+# Static analysis, in two parts, because they need different things installed.
+#
+#   1. Parse every script. Needs nothing but PowerShell itself, and catches the
+#      failure that matters most in this stack: a file that does not parse at
+#      all. That is not hypothetical — a BOM-less UTF-8 script containing any
+#      non-ASCII character fails to parse under Windows PowerShell 5.1, and the
+#      error it reports points at a quote rather than at the encoding.
+#
+#   2. PSScriptAnalyzer. Missing module is a hard failure, not a skip. A check
+#      that passes silently when its tool is absent is worse than no check: it
+#      reports green on a clone that is analysing nothing.
+
+set -e
+. "$(dirname "$0")/_pwsh"
+
+run_pwsh <<'PS'
+$ErrorActionPreference = 'Stop'
+
+$files = Get-ChildItem -Recurse -File |
+    Where-Object { $_.Extension -in '.ps1', '.psm1', '.psd1' } |
+    Where-Object { $_.FullName -notmatch '[\\/](\.git|output|BuildOutput)[\\/]' }
+
+if (-not $files) {
+    Write-Host '· no PowerShell files to analyse'
+    exit 0
+}
+
+# --- 1. parse -------------------------------------------------------------
+$broken = 0
+foreach ($f in $files) {
+    $errors = $null
+    # ParseFile, not Resolve-Path + ParseFile: on a WSL working directory
+    # Resolve-Path hands back a provider-qualified path
+    # (Microsoft.PowerShell.Core\FileSystem::\\wsl.localhost\...) that this API
+    # cannot open, while FileInfo.FullName stays a plain path.
+    [void][System.Management.Automation.Language.Parser]::ParseFile(
+        $f.FullName, [ref]$null, [ref]$errors)
+    if ($errors.Count -gt 0) {
+        $broken++
+        foreach ($e in $errors) {
+            '  {0}:{1} {2}' -f $f.Name, $e.Extent.StartLineNumber, $e.Message
+        }
+    }
+}
+if ($broken -gt 0) {
+    Write-Host ("✗ {0} file(s) failed to parse" -f $broken)
+    exit 1
+}
+Write-Host ("✓ parsed {0} file(s)" -f $files.Count)
+
+# --- 2. PSScriptAnalyzer --------------------------------------------------
+if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+    Write-Host '✗ PSScriptAnalyzer is not installed.'
+    Write-Host '  Install-Module PSScriptAnalyzer -Scope CurrentUser'
+    Write-Host '  (deliberately not on the agent allow-list — it writes outside the repo)'
+    exit 1
+}
+Import-Module PSScriptAnalyzer
+
+$found = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error, Warning
+if ($found) {
+    $found | Format-Table -AutoSize RuleName, Severity, ScriptName, Line, Message | Out-String | Write-Host
+    Write-Host ("✗ PSScriptAnalyzer: {0} finding(s)" -f @($found).Count)
+    exit 1
+}
+Write-Host '✓ PSScriptAnalyzer clean'
+PS

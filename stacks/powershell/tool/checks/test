@@ -1,0 +1,47 @@
+#!/bin/sh
+# Pester.
+#
+# Pester 5 is a rewrite: its `Describe`/`It` blocks run in a different order
+# from Pester 3's, `-PassThru` returns a different object, and mocks are scoped
+# differently. Windows ships Pester 3.4.0 in the system module path and it is
+# still there after you install Pester 5, so a run that silently picks up 3.4.0
+# fails in ways that read like broken tests. This check demands 5.x by version
+# rather than importing whatever answers first.
+
+set -e
+. "$(dirname "$0")/_pwsh"
+
+run_pwsh <<'PS'
+$ErrorActionPreference = 'Stop'
+
+$tests = Get-ChildItem -Recurse -File -Filter '*.Tests.ps1' |
+    Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' }
+
+if (-not $tests) {
+    # Not a failure. A project legitimately has no tests on day one, and the
+    # core hook's contract is that a check which does not apply is skipped.
+    # It is still worth saying out loud, because "tests passed" and "there are
+    # no tests" look identical in a green pipeline.
+    Write-Host '· no *.Tests.ps1 found — nothing to run'
+    exit 0
+}
+
+$pester = Get-Module -ListAvailable -Name Pester |
+    Where-Object { $_.Version.Major -ge 5 } |
+    Sort-Object Version -Descending |
+    Select-Object -First 1
+
+if (-not $pester) {
+    Write-Host '✗ Pester 5 or newer is not installed.'
+    Write-Host '  Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser -Force'
+    Write-Host '  (Windows ships 3.4.0; -Force is needed to install alongside it.)'
+    exit 1
+}
+Import-Module $pester.Path -Force
+
+$config = New-PesterConfiguration
+$config.Run.Path = '.'
+$config.Run.Exit = $true
+$config.Output.Verbosity = 'Normal'
+Invoke-Pester -Configuration $config
+PS
