@@ -40,6 +40,17 @@ nix eval --raw '.#nixosConfigurations."<name>".config.system.build.toplevel.drvP
 
 `tool/checks/test` does this for every configuration.
 
+### `tool/doctor.sh`: `could not ask the flake whether nix-command works`
+
+The doctor could not run `nix flake metadata`, and the failure was *not* the
+experimental-features flag — so exporting `NIX_CONFIG` will not clear it. The
+rest of the line is the root cause nix reported; act on that.
+
+Seen so far: a read-only `~/.cache/nix` (agent sandboxes deny it), no network,
+and an untracked `flake.nix`. Each of these used to be reported as
+"nix-command/flakes not enabled by default", which sent you to a variable that
+could not help.
+
 ### statix: `Found empty pattern in function argument`
 
 A module written as `{...}: { ... }` when nothing from the module arguments is
