@@ -38,7 +38,8 @@ stack from [`stacks/`](stacks/), and run `core/setup-repo.sh`.
 ```
 decisions/       Why each convention exists, and what went wrong without it
 core/            Stack-agnostic: hooks, gitignore, doc templates, agent commands
-stacks/flutter/  The Flutter overlay — the only one so far
+stacks/flutter/  The Flutter overlay
+stacks/nix/      The Nix overlay — home-manager, nix-darwin and NixOS configs
 SCAFFOLD.md      The playbook an agent follows
 ```
 
@@ -53,9 +54,12 @@ clock. They have been used in anger there and nowhere else yet. The core is
 written to be stack-agnostic, but "stack-agnostic" here means "nothing in it is
 Flutter-specific", not "proven on four ecosystems".
 
-Only the Flutter overlay exists, because it is the only one that has been
-verified. Overlays for other stacks belong here when someone has actually run
-them, not before.
+The Flutter overlay is verified: built in anger, on the project these
+conventions came from. The Nix overlay is only partly verified — see
+[`stacks/nix/README.md`](stacks/nix/README.md) for exactly which part.
+Overlays, and parts of overlays, belong here when someone has actually run
+them, not before; where that line falls for Nix is written down rather than
+implied.
 
 ## Licence
 
