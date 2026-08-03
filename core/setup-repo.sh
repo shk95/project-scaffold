@@ -7,6 +7,13 @@
 # Run once, after the first push of both branches. Needs `gh` authenticated.
 #
 #   core/setup-repo.sh <owner>/<repo> [release-branch] [integration-branch]
+#
+# What can block work is stack-specific, so the reasons beyond the universal
+# one come from the environment. Each stack overlay names the ones its projects
+# need:
+#
+#   BLOCKED_LABELS="needs-aarch64-darwin needs-nixos-host" \
+#     core/setup-repo.sh <owner>/<repo>
 
 set -e
 
@@ -21,7 +28,13 @@ echo "→ labels"
 # decisions/005-unfinishable-work-becomes-an-issue.md
 gh label create blocked --repo "$repo" --color B60205 --force \
   --description "Written but not verifiable on the host that wrote it" >/dev/null
-for what in needs-android-device needs-windows needs-manual-check; do
+
+# needs-manual-check is the only universal one: every stack eventually has
+# something a human has to look at. Everything else — a device, an OS, a
+# builder for another system — depends on what is being built, and hardcoding
+# one stack's list here is how the second project to use this core ends up
+# with labels for platforms it does not target.
+for what in needs-manual-check ${BLOCKED_LABELS:-}; do
   gh label create "blocked/$what" --repo "$repo" --color D93F0B --force \
     --description "Blocked: $what" >/dev/null
 done

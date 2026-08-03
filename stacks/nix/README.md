@@ -24,13 +24,18 @@ No SDK version to pin the way the Flutter overlay pins `.flutter-version`:
 `flake.lock` already is that pin, for every input, and `tool/doctor.sh` checks
 that flakes are enabled rather than checking a version number.
 
-Add a blocked label per system you cannot build locally, alongside the ones
-`core/setup-repo.sh` creates:
+Name the blocked reasons this stack actually has when running
+`core/setup-repo.sh`, one per system you cannot build locally:
 
 ```sh
-gh label create blocked/needs-aarch64-darwin --color D93F0B --force \
-  --description "Blocked: needs an aarch64-darwin builder"
+BLOCKED_LABELS="needs-aarch64-darwin needs-nixos-host" \
+  core/setup-repo.sh <owner>/<repo>
 ```
+
+Prefer the full system string (`needs-aarch64-darwin`) over the kernel
+(`needs-darwin`): on `x86_64-linux` an `aarch64-linux` configuration is
+equally unbuildable, and a label saying `needs-linux` reads as satisfied by
+the host that just skipped it.
 
 ## Verification is two tiers, and the tiers have different reach
 
