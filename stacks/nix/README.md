@@ -156,12 +156,13 @@ correctly exiting non-zero; the skip-and-warn path exercised on a synthetic
 two-flavour repo with a shared-module change; the missing-`origin` path
 degrading to a printed note rather than silence.
 
+The CI workflow has been watched passing on a real pull request: both jobs
+green, roughly six and a half minutes for the build job with no binary cache.
+
 **Not verified:** actually *building* a darwin or NixOS configuration, which
 by definition needs those hosts. `nixos-rebuild`/`darwin-rebuild switch` have
-never been run through these conventions. And the CI workflow has never been
-watched passing on a real push — `DeterminateSystems/nix-installer-action` and
-`magic-nix-cache-action` are used as documented, nothing more. Watch the first
-run rather than trusting the YAML.
+never been run through these conventions, and no CI run has yet exercised the
+skip-and-warn path against a real foreign-system configuration.
 
 **Import-from-derivation defeats tier 1.** If a configuration uses IFD, then
 evaluating it for a foreign system has to *build* something for that system
