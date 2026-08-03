@@ -156,8 +156,14 @@ correctly exiting non-zero; the skip-and-warn path exercised on a synthetic
 two-flavour repo with a shared-module change; the missing-`origin` path
 degrading to a printed note rather than silence.
 
-The CI workflow has been watched passing on a real pull request: both jobs
-green, roughly six and a half minutes for the build job with no binary cache.
+The CI workflow has been watched passing on real pull requests: both jobs
+green, with the build job taking about a minute and a half on a single-flavour
+repository.
+
+That number is also why `magic-nix-cache-action` is gone rather than merely
+tolerated. The run carrying it took 6m39s; the next two, identical but without
+it, took 1m23s and 1m28s. Same repository, same checks — so the action was
+charging five minutes for a cache it could not authenticate to.
 
 **Not verified:** actually *building* a darwin or NixOS configuration, which
 by definition needs those hosts. `nixos-rebuild`/`darwin-rebuild switch` have
