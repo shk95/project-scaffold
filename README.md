@@ -42,11 +42,19 @@ stacks/flutter/     The Flutter overlay
 stacks/nix/         The Nix overlay — home-manager and NixOS flakes
 stacks/powershell/  The PowerShell 7 overlay — tools that install onto Windows
 SCAFFOLD.md         The playbook an agent follows
+tool/checks/lint    This repository's own check — not something you copy
 ```
 
 The core hooks delegate their checks to `tool/checks/format`, `tool/checks/lint`
 and `tool/checks/test`, which the stack overlay supplies. That is what keeps the
 core actually stack-agnostic rather than nominally so.
+
+This repository runs the core hooks and the secret scan on itself, which means
+it carries a second copy of those files. A second copy drifts, and this one did:
+a fix to `core/githooks/pre-push` never reached `.githooks/pre-push`, and
+nothing went red, because there is no test suite here for that hook to run.
+`tool/checks/lint` now compares the pair. The milestone and definition-of-done
+machinery is deliberately *not* applied here — there is no software to be done.
 
 ## Honest limits
 

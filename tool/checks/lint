@@ -1,0 +1,67 @@
+#!/bin/sh
+# Asserts that this repository's own copies of the core files still match
+# core/.
+#
+# A conventions repository that applies its conventions to itself necessarily
+# carries a second copy of everything it applies, and a second copy drifts.
+# This one already had: 3736599 taught core/githooks/pre-push to skip the test
+# suite on a branch deletion, and .githooks/pre-push — copied one commit
+# earlier — never learned it. Nothing failed, because there is no
+# tool/checks/test here for that hook to run, so the divergence stayed
+# invisible until someone diffed the pair by hand. That is
+# decisions/003-done-must-be-mechanically-checkable.md in miniature: the copy
+# was believed to be in sync on the strength of nothing going red.
+#
+# Called by the pre-commit hook for fast feedback, and by CI because hooks are
+# opt-in — decisions/002-hooks-are-opt-in-so-ci-must-backstop.md.
+#
+# Content only, never the mode. SCAFFOLD.md tells you to chmod +x on copy, so
+# the executable bit is meant to differ between core/githooks/* and .githooks/*
+# and comparing it would fail on every correct copy.
+
+set -e
+
+red='\033[31m'; green='\033[32m'; off='\033[0m'
+status=0
+
+# $1 is the original under core/, $2 the copy this repository applies to
+# itself. The argument order is the direction a fix has to travel.
+same() {
+  if [ ! -f "$1" ]; then
+    printf "  ${red}✗${off} %s does not exist — nothing to copy from\n" "$1" >&2
+    status=1
+  elif [ ! -f "$2" ]; then
+    printf "  ${red}✗${off} %s does not exist — the copy is missing\n" "$2" >&2
+    status=1
+  elif cmp -s "$1" "$2"; then
+    printf "  ${green}✓${off} %s\n" "$2"
+  else
+    printf "  ${red}✗${off} %s has drifted from %s\n" "$2" "$1" >&2
+    diff -u "$1" "$2" | sed 's/^/      /' >&2
+    status=1
+  fi
+}
+
+echo "Files this repository copies from core/"
+
+same core/gitignore                 .gitignore
+same core/githooks/pre-commit       .githooks/pre-commit
+same core/githooks/commit-msg       .githooks/commit-msg
+same core/githooks/pre-push         .githooks/pre-push
+same core/workflows/secret-scan.yml .github/workflows/secret-scan.yml
+
+echo
+if [ "$status" -ne 0 ]; then
+  cat >&2 <<'EOF'
+✗ A file copied from core/ no longer matches its source.
+
+  core/ is the original. Copy it over the local one:
+
+    cp core/githooks/<name> .githooks/<name>
+
+  Fixing only the copy is worse than the drift itself — the next project to
+  use this scaffold takes core/, and would not get the fix.
+EOF
+  exit 1
+fi
+printf "${green}In sync.${off}\n"

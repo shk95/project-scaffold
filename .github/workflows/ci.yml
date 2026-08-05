@@ -1,0 +1,33 @@
+name: CI
+
+# Runs this repository's own checks. There is no software here to build or
+# test — the only thing that can be wrong is that a file this repository
+# copied from core/ no longer matches core/. tool/checks/lint asserts that.
+#
+# It is a separate workflow rather than a job merged into secret-scan.yml,
+# which is the arrangement a stack overlay uses. It has to be: secret-scan.yml
+# is one of the files tool/checks/lint compares against core/, so editing it
+# here would make this repository fail its own check.
+#
+# The pre-commit hook runs the same check, and this job is why that is not
+# enough — core.hooksPath is per-clone configuration and a clone that never set
+# it commits with no checks at all. See
+# decisions/002-hooks-are-opt-in-so-ci-must-backstop.md.
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master, dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Core copies in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: tool/checks/lint
